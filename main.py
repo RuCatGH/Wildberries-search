@@ -1,8 +1,8 @@
 import asyncio
+from multiprocessing import cpu_count, Pool
 
 import pstats
 import jmespath
-import requests
 import cProfile
 import pstats
 import pandas as pd
@@ -11,17 +11,14 @@ import aiohttp
 from settings_request import headers, cookies
 
 
-async def read_csv():
+def read_csv():
     df = pd.read_csv("requests.csv", sep=",", names=['Название запроса', 'Колличество', 'Название каталога'])
-    request_name = df.head(100).iloc[:, 0].to_list()
-    return request_name, df.head(100)
+    request_name = df.iloc[:, 0].to_list()
+    return request_name, df
 
-
-async def main():
-    async with aiohttp.ClientSession() as session:
-        csv_data = []
-        queries, df = await read_csv()
-        for query in queries:
+async def get_data(query):
+    try:
+        async with aiohttp.ClientSession() as session:
             query = query.replace(' ', '+')
             async with session.get(
                 f'https://search.wb.ru/exactmatch/ru/common/v4/search?appType=1&couponsGeo=12,3,18,15,'
@@ -45,15 +42,33 @@ async def main():
                     response = await response.json(content_type=None)
                     data = jmespath.search('value.data.sitePath[:-1].name', response)
                     if data == None:
-                        csv_data.append('')
+                        data = ''
                     else:
-                        csv_data.append('/'.join(data))
-    df['Название каталога'] = csv_data
+                        data = '/'.join(data)
+    except:
+        data = ''
+    return data
+
+def start(query):
+    data = asyncio.get_event_loop().run_until_complete(get_data(query))
+    return data
+
+def main():
+    # with cProfile.Profile() as pr:
+    queries, df = read_csv()
+    records = [(query,) for query in queries]
+    with Pool(cpu_count()) as p:
+        data = p.starmap(start, records)
+        p.close()
+        p.join()
+    df['Название каталога'] = data
+    df.to_csv("result.csv", index=False)    
+    # stats = pstats.Stats(pr)
+    # stats.sort_stats(pstats.SortKey.TIME)
+    # stats.print_stats()
+    
 if __name__ == "__main__":
-    with cProfile.Profile() as pr:
+    main()
         
-        asyncio.get_event_loop().run_until_complete(main())
-    stats = pstats.Stats(pr)
-    stats.sort_stats(pstats.SortKey.TIME)
-    stats.print_stats()
-    # df.to_csv("/path/to/result.csv", index=False)
+    
+    
