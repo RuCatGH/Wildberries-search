@@ -4,7 +4,6 @@ from multiprocessing import cpu_count, Pool
 import pstats
 import jmespath
 import cProfile
-import pstats
 import pandas as pd
 import aiohttp
 
